@@ -1,0 +1,43 @@
+# ===== macOS =====
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ===== IntelliJ IDEA =====
+.idea/
+*.iml
+*.iws
+out/
+
+# ===== VS Code =====
+.vscode/
+
+# ===== Java / Maven =====
+target/
+*.class
+*.jar
+*.war
+hs_err_pid*
+.mvn/wrapper/maven-wrapper.jar
+mvnw.cmd
+
+# ===== Gradle =====
+.gradle/
+build/
+
+# ===== Spring Boot =====
+*.log
+application-local.yml
+application-local.properties
+
+# ===== 敏感配置（重要！）=====
+.env
+.env.local
+*.key
+secrets/
+
+# ===== Python（M3+ 阶段会用）=====
+__pycache__/
+*.pyc
+.venv/
+venv/
