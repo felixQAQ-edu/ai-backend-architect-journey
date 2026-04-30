@@ -144,6 +144,7 @@ _在这里简要写一下你的现有技术栈、薄弱环节、可投入时间�
 - 完成：
   - 总览文档落地，建立项目"中央档案"
   - ADR-001：流式输出技术选型完成（决策：SSE + Spring MVC + SseEmitter）
+  - 完成本地开发环境搭建（Homebrew、Git、JDK 21、GitHub SSH），SETUP.md 归档
 - 卡点：暂无
 - 下周计划：
   - 搭建 Spring Boot 3.x 项目脚手架（JDK 21，启用虚拟线程作为后续升级路径准备）
