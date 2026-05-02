@@ -19,7 +19,7 @@ target/
 *.war
 hs_err_pid*
 .mvn/wrapper/maven-wrapper.jar
-mvnw.cmd
+*.Rhistory
 
 # ===== Gradle =====
 .gradle/
