@@ -12,17 +12,20 @@
 ## 当前进度
 
 - **阶段**：第一阶段 · 管道优先
-- **月份**：M1 · Week 1
-- **本周任务**：搭建 Spring Boot 3.x 脚手架，实现首个 SSE 流式端点
+- **月份**：M1 · Week 3
+- **本周任务**：Token 计费中间件 + 请求日志 @Aspect + ChatMemoryStore 持久化
 
 ## 阶段目录
 
-- `m1-knowledge-agent/` — M1：团队知识库问答 Agent（Spring Boot × LLM 全链路）
+- `chat-pipeline/` — M1：团队知识库问答 Agent（Spring Boot 3.5 + LangChain4j + SSE 流式 + Tool Calling + 多轮记忆）
 - _后续阶段目录将随进度建立_
 
 ## 技术决策记录（ADR）
 
 - [ADR-001: 流式输出技术选型 — SSE + Spring MVC](docs/adr/ADR-001-sse-vs-webflux.md)
+- [ADR-002: Spring Boot 版本选型 — 3.5 vs 4.0](docs/adr/ADR-002-spring-boot-version.md)
+- [ADR-003: 跨境部署节点与支付通道策略](docs/adr/ADR-003-cross-border-deploy.md)
+- [ADR-004: LLM 调用框架选型 — LangChain4j vs Spring AI vs 直连 SDK](docs/adr/ADR-004-llm-framework.md)
 
 ## 技术栈
 
