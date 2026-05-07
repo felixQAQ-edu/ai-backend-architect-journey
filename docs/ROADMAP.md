@@ -11,7 +11,7 @@
 | 项目启动日期 | 2026-04-30 |
 | 预计完成日期 | 2027-04-30 |
 | 当前阶段 | 第一阶段 · 管道优先 |
-| 当前月份 | M1 · Week 1 |
+| 当前月份 | M1 · Week 3 |
 | 整体目标 | 从应用层 → 底层推理 → RAG 架构 → 高可用 SaaS，完整跨越四层技术栈 |
 | 终极交付物 | 一个上线运营、有付费用户、有可量化业务数据的 AI SaaS 系统 |
 | 地理时间线 | 悉尼留学期间启动与开发 → 2027-06 末回国 → 回国后根据 M8 验证结果决定是否继续 |
@@ -61,7 +61,7 @@ _在这里简要写一下你的现有技术栈、薄弱环节、可投入时间�
 - Java 后端通过 OpenAI-compatible API 接入本地模型
 
 **M4 · 量化技术实验**
-- INT8 / INT4 量化对比：模型大小、推理速度、回答质量三维测评
+- INT8 / INT4 量化对比:模型大小、推理速度、回答质量三维测评
 - GGUF 格式与 llama.cpp 在 CPU 上的执行逻辑
 - 不同硬件配置（有无 GPU）下的 tokens/s 数据记录
 
@@ -133,7 +133,7 @@ _在这里简要写一下你的现有技术栈、薄弱环节、可投入时间�
 
 | 月份 | 阶段 | 核心任务 | 状态 | 实际完成日期 | 主要产出 / 链接 | 备注 |
 |------|------|---------|------|------------|---------------|------|
-| M1 | 一 | Spring Boot × LLM 全链路 + 团队知识库 Agent | 🟨 | | ADR-001 流式输出选型已确定（SSE + Spring MVC）；ADR-002 Spring Boot 3.5.14 已确定 | Week 1 启动 |
+| M1 | 一 | Spring Boot × LLM 全链路 + 团队知识库 Agent | 🟨 | | ADR-001 流式输出选型（SSE + Spring MVC）；ADR-002 Spring Boot 3.5.14；ADR-004 LLM 框架（LangChain4j 1.11.0-beta19）；M1 Week 2 流式骨架联调通过（SSE + Tool Calling + ChatMemory 三件套 5 项验收 PASS） | Week 2 完成，Week 3 进行中 |
 | M2 | 一 | 引擎替换为金融 API | ⬜ | | | |
 | M3 | 二 | Ollama + vLLM 本地部署 | ⬜ | | | M3 启动前完成 SSD 采购 + 云 GPU 平台选型（候选 ADR） |
 | M4 | 二 | INT8 / INT4 量化对比实验 | ⬜ | | | |
@@ -162,6 +162,26 @@ _在这里简要写一下你的现有技术栈、薄弱环节、可投入时间�
   - 搭建 Spring Boot 3.5.14 项目脚手架（JDK 21，启用虚拟线程作为后续升级路径准备）
   - 完成 LLM 调用框架选型（候选议题：LangChain4j vs Spring AI vs 直连 SDK）
   - 实现首个 SSE 端点的 mock 流式输出
+
+**Week 2（2026-05-07）**
+- 完成：
+  - ADR-004：LLM 调用框架选型完成（决策：LangChain4j 1.11.0-beta19 + Spring Boot starter）
+  - Spring Boot 3.5.14 项目骨架落地：Maven Wrapper + JDK 21 + 虚拟线程预启用，Spring Initializr 生成 + 在 journey 仓库内作为 `chat-pipeline/` 子项目托管
+  - 5 个 `@Tool` 方法落地（mock 团队知识库 + 参数校验 + LLM 自纠错路径）：searchDocuments / getDocumentById / listDocumentsByCategory / getCurrentDateTime / summarizeDocument
+  - SSE 流式 + ChatMemoryProvider 多轮记忆 + Tool Calling 三件套联调验收（5 项全 PASS）：
+    - 基础流式（token 逐字推送）✓
+    - 会话记忆（同 sessionId 跨轮上下文）✓
+    - Tool Calling 触发（searchDocuments 自动调用）✓
+    - 参数校验自愈（LLM 收到 limit=100 错误后改合法值重试）✓
+    - 多步 Tool Chain（listDocumentsByCategory → summarizeDocument × 2 三连）✓
+  - 接入 OpenAI gpt-4o-mini 作为初始 Provider（DeepSeek/Ollama 通过改 base-url 即可切换）
+- 卡点：
+  - KnowledgeBaseTools.java 第 113 行中文弯引号嵌套写错一次（`@Tool("..."今天""最近"...")` ASCII 双引号嵌套破坏字符串字面量），改用「」方括号修复
+  - nano 编辑器 `Ctrl+O` 在当前 macOS 配置下无响应，改用 `Ctrl+X` → `Y` → `Enter` 三步触发保存
+- 下周计划（Week 3）：
+  - **Token 计费中间件**：在 ChatController.onCompleteResponse 已留好的接入点消费 `tokenUsage.inputTokenCount/outputTokenCount`，落库到 `billing_log` 表
+  - **请求/响应日志落库**：用 `@Aspect` 切 `KnowledgeAssistant.chat(...)` 方法，记录 sessionId + message + 最终 response 到 `chat_log` 表
+  - **ChatMemoryStore 持久化**：实现 `ChatMemoryStore` 接口接 SQLite / H2，替换当前内存版 `MessageWindowChatMemory`（应用重启不再丢失会话）
 
 ---
 
@@ -196,10 +216,10 @@ _在这里简要写一下你的现有技术栈、薄弱环节、可投入时间�
 | ADR-001 | Spring Boot LLM 流式输出技术选型（SSE vs WebFlux） | 已采纳 | `ADR-001-sse-vs-webflux.md` |
 | ADR-002 | Spring Boot 版本选型（3.5 vs 4.0） | 已采纳 | `ADR-002-spring-boot-version.md` |
 | ADR-003 | 部署节点与支付通道跨境策略 | 已采纳（约束已锁定，具体技术方案 M9 启动前回填） | `ADR-003-cross-border-deploy.md` |
+| ADR-004 | LLM 调用框架选型（LangChain4j vs Spring AI vs 直连 SDK） | 已采纳 | `ADR-004-llm-framework.md` |
 
 ### 待决策候选议题
 
-- **LLM 调用框架选型**：LangChain4j vs Spring AI vs 直连 SDK（M1 Week 2 启动前完成）
 - **硬件与云 GPU 资源策略**：外置 SSD 选型 + 云 GPU 平台选型（M3 启动前完成）
 - **向量数据库选型**：Milvus vs Qdrant vs 云托管（M7 启动前完成）
 
@@ -377,3 +397,4 @@ _暂无_
 | v1.2 | 2026-04-30 | 嵌入 ADR-001 完整内容（SSE + Spring MVC + SseEmitter 决策详情、已知代价与重审触发条件）；ADR-002 候选议题预占位 |
 | v1.3 | 2026-04-30 | 新增第七节「方向假设池」（四问框架 + 5 条候选首批录入）；第一阶段补充"前 8 个月不锁方向"设计哲学；M8 标记为方向决策节点；关键资源索引下补充用户验证渠道备忘；Claude 协作约定新增第 6 条（开放式探讨需主动总结入档） |
 | v1.4 | 2026-05-04 | ADR 完整内容拆出独立文件，正文仅保留索引；新增第八节「跨境时间线与迁移检查点」（部署策略、支付策略、检查点表、暂不做清单）；项目元信息补充地理时间线与目标用户初步定位；M8 增加地理决策与持续性决策节点；方向假设池补充"目标用户地区"列；M11 任务描述补充支付通道分层策略；关键资源索引下新增项目预算备忘三档总表；新增 ADR-003（跨境部署与支付）索引项 |
+| v1.5 | 2026-05-07 | M1 Week 2 收尾：ADR-004 LLM 调用框架选型完成（LangChain4j 1.11.0-beta19 + Spring Boot starter）；新增 Week 2 周度日志（含 5 项联调验收 PASS 记录与 Week 3 任务前瞻）；进度表 M1 行更新主要产出与备注栏；从「待决策候选议题」中移除已落定的 LLM 框架选型；项目元信息「当前月份」更新为 M1 · Week 3 |

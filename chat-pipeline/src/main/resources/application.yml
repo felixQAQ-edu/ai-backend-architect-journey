@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: chat-pipeline
+  # ADR-001 升级路径预留：开启虚拟线程后，SSE 长连接可承载量级会显著提升
+  threads:
+    virtual:
+      enabled: true
+
+# LangChain4j Provider 配置
+# 默认指向 DeepSeek（OpenAI-compatible）。切换 Provider 改环境变量即可，业务代码零改动
+langchain4j:
+  open-ai:
+    streaming-chat-model:
+      base-url: ${LLM_BASE_URL:https://api.deepseek.com/v1}
+      api-key: ${LLM_API_KEY}
+      model-name: ${LLM_MODEL_NAME:deepseek-chat}
+      temperature: 0.7
+      timeout: PT60S
+      log-requests: true   # 学习阶段开启请求日志，方便看清楚发给 LLM 的 messages 长什么样
+      log-responses: true
+
+logging:
+  level:
+    dev.langchain4j: DEBUG  # 想看 Tool Calling 的 schema 生成、token 流过程
+    com.felix.chatpipeline: DEBUG
