@@ -4,13 +4,40 @@ server:
 spring:
   application:
     name: chat-pipeline
-  # ADR-001 升级路径预留：开启虚拟线程后，SSE 长连接可承载量级会显著提升
+
+  # ADR-001 升级路径预留:开启虚拟线程后,SSE 长连接可承载量级会显著提升
   threads:
     virtual:
       enabled: true
 
+  # ===== Step 1.2: 持久化基座 (M1 Week 3) =====
+  datasource:
+    url: jdbc:h2:file:./data/learn;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  jpa:
+    open-in-view: false          # ADR-005: 关闭 OSIV(与 SSE 长连接 + 50 并发目标冲突,见 docs/adr/ADR-005-disable-osiv.md)
+    hibernate:
+      ddl-auto: validate         # Flyway 拥有 DDL,JPA 只校验 Entity 是否与表结构匹配
+    show-sql: false              # 调试时可临时改 true 看 Hibernate 生成的 SQL
+    properties:
+      hibernate:
+        format_sql: true
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true    # 目标库已有非 Flyway 创建的表时友好兜底,我们的场景用不上但留着保险
+
 # LangChain4j Provider 配置
-# 默认指向 DeepSeek（OpenAI-compatible）。切换 Provider 改环境变量即可，业务代码零改动
+# 默认指向 DeepSeek (OpenAI-compatible)。切换 Provider 改环境变量即可,业务代码零改动
 langchain4j:
   open-ai:
     streaming-chat-model:
@@ -19,10 +46,10 @@ langchain4j:
       model-name: ${LLM_MODEL_NAME:deepseek-chat}
       temperature: 0.7
       timeout: PT60S
-      log-requests: true   # 学习阶段开启请求日志，方便看清楚发给 LLM 的 messages 长什么样
+      log-requests: true   # 学习阶段开启请求日志,方便看清楚发给 LLM 的 messages 长什么样
       log-responses: true
 
 logging:
   level:
-    dev.langchain4j: DEBUG  # 想看 Tool Calling 的 schema 生成、token 流过程
+    dev.langchain4j: DEBUG       # 想看 Tool Calling 的 schema 生成、token 流过程
     com.felix.chatpipeline: DEBUG

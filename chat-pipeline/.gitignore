@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# ===== H2 本地数据库文件 (M1 Week 3) =====
+data/
+*.mv.db
+*.trace.db
+*.lock.db
