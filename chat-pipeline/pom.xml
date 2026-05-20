@@ -5,7 +5,7 @@
                              https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- ADR-002 锁定 Spring Boot 3.5.x；具体 patch 版按发布时点选最新 -->
+    <!-- ADR-002 锁定 Spring Boot 3.5.x;具体 patch 版按发布时点选最新 -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
@@ -21,12 +21,20 @@
 
     <properties>
         <java.version>21</java.version>
-        <!-- ADR-004 锁定 LangChain4j 1.11.x；Spring Boot 启动器目前是 beta 版本 -->
-        <langchain4j.version>1.11.0-beta19</langchain4j.version>
+
+        <!--
+            ADR-004 锁定 LangChain4j 1.11.x。
+            注意 LangChain4j 是双轨版本号(LEARNING-NOTES 笔记 6):
+              - 核心 / HTTP client 实现走稳定线:1.11.0
+              - Spring Boot 集成走 beta 线:1.11.0-beta19
+            两条线是官方对齐的同一 release,不是版本不一致。
+        -->
+        <langchain4j.spring.version>1.11.0-beta19</langchain4j.spring.version>
+        <langchain4j.core.version>1.11.0</langchain4j.core.version>
     </properties>
 
     <dependencies>
-        <!-- Web + SSE（SseEmitter 走 spring-web 的标准 Servlet 异步分支） -->
+        <!-- Web + SSE(SseEmitter 走 spring-web 的标准 Servlet 异步分支) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -36,23 +44,59 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-spring-boot-starter</artifactId>
-            <version>${langchain4j.version}</version>
+            <version>${langchain4j.spring.version}</version>
         </dependency>
 
-        <!-- OpenAI-compatible Provider（DeepSeek / OpenAI / Moonshot / Ollama 都走这套） -->
+        <!-- OpenAI-compatible Provider(DeepSeek / OpenAI / Moonshot / Ollama 都走这套) -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
-            <version>${langchain4j.version}</version>
+            <version>${langchain4j.spring.version}</version>
         </dependency>
 
-        <!-- Bean Validation：未来给 ChatRequest DTO 加 @NotBlank 等约束时启用 -->
+        <!--
+            === HTTP Client adapter workaround (2026-05-15, M1 Week 3 Day 3→4) ===
+
+            背景:starter 默认装载 spring-restclient adapter,1.11.0-beta19 版本在
+                 macOS + JDK 21 streaming 路径下会同步抛 UnresolvedAddressException
+                 (35ms 内失败,根本不出网络),所有真实 LLM 调用无法跑通。
+
+            诊断锁定:RawJdkHttpClientTest 用 20 行纯 JDK HttpClient 直打
+                     api.openai.com 返回 200,证明 JDK 本身完全正常。
+                     锅在 spring-restclient adapter 1.11.0-beta19。
+
+            修复方案:加入 jdk client adapter,通过 config/LangChain4jHttpClientConfig
+                     里的同名 bean 覆盖 starter 默认的 builder。
+
+            !!! 重要 !!!
+            不能用 <exclusions> 把 langchain4j-http-client-spring-restclient 排掉。
+            starter 的 AutoConfig.java:155 字节码硬编码引用了 SpringRestClient class,
+            排除会引发 NoClassDefFoundError。
+            正确做法见 com.felix.chatpipeline.config.LangChain4jHttpClientConfig:
+            提供一个名字精确叫 openAiStreamingChatModelHttpClientBuilder 的 @Bean,
+            借助 starter 的 @ConditionalOnMissingBean(names=...) 让 starter 的
+            硬编码版本跳过(那个有 bug 的工厂方法压根不会被调用)。
+
+            撤回条件:
+              - LangChain4j 修复 spring-restclient streaming 路径(关注
+                langchain4j-spring 仓库 release notes)
+              - 升级到 1.12+ 时重新评估 starter 的 HTTP client 装载方式
+
+            详见 LEARNING-NOTES 笔记 6 + ADR-004 已知代价补遗。
+        -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-http-client-jdk</artifactId>
+            <version>${langchain4j.core.version}</version>
+        </dependency>
+
+        <!-- Bean Validation:未来给 ChatRequest DTO 加 @NotBlank 等约束时启用 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- Actuator：M1 后续做 Token 用量指标 / 健康检查时用 -->
+        <!-- Actuator:M1 后续做 Token 用量指标 / 健康检查时用 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
