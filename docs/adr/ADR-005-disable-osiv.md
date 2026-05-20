@@ -95,6 +95,11 @@ spring:
 
 ## 实际效果(事后补充)
 
-_M1 结束时回填:关闭 OSIV 后是否踩过 `LazyInitializationException`?`@Transactional` 的使用频率如何?_
+**M1 Day 4 末实测**:
 
-_M5 压测时回填:50 并发场景下连接池占用率如何?_
+- 关闭 OSIV 后,BillingListener.onResponse / onError 内的 `repository.save()` 由 Spring Data JPA 的隐式 `@Transactional` 处理,**无 `LazyInitializationException`**(BillingLog 实体无懒加载关联,这一点本来就是为了规避 OSIV 关闭后的 lazy 风险刻意设计的)
+- 跨线程场景(Tomcat handler 线程 + ForkJoinPool 线程)Hibernate Session 隔离正常,每次 save 各自开/关 session,无连接池泄漏
+- service 层 + Listener 调用 repository 时无需显式 `@Transactional`(因为 Spring Data 默认事务足够),意图仍清晰
+- HikariCP 默认 10 个连接,Day 4 单线程 curl 场景下使用量稳定在 1-2,远未饱和
+
+**M5 压测时回填**:50 并发 SSE 长连接场景下连接池占用率、SUCCESS 路径下的事务平均耗时。

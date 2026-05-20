@@ -72,6 +72,13 @@ M1 阶段需要在 Spring Boot 后端打通"用户提问 → LLM 流式生成 �
 - 整个技术栈已演进为全响应式（关系库换 R2DBC、缓存换 Reactive Redis），或
 - SSE 长连接数量级达到 5000+
 
-## 实际效果（事后补充）
+## 实际效果(事后补充)
 
-_M1 结束时回填：实际跑通用了多久？调试体验是否符合预期？是否遇到 SseEmitter 的坑？_
+**M1 Day 4 末实测**:
+
+- SSE + SseEmitter 跑通真实流式调用(OpenAI gpt-4o-mini,5 个 chunk,1067ms 端到端)
+- Controller setup(从进入 @Around 到返回 SseEmitter)实测 24ms,与 SseEmitter 真正完成响应的耗时差 44 倍
+- @Aspect、Token 计费 Listener、Filter / MDC 全套 Spring MVC 生态横切关注点零阻力集成,符合"调试体验与生态兼容"的预期
+- 跨线程现象(`tomcat-handler-0` → `ForkJoinPool.commonPool-worker-1`)与方案 1 分析一致:thread-per-request 模型不变,但流式回调由框架内部派发到 ForkJoinPool。这与 WebFlux 的 event loop 不是一回事,要用 `ChatModelListener.attributes()` 桥接
+
+未踩到 SseEmitter 的明显坑(如断线重连、超时回调缺失等)。当前实测样本数仅一周,M2 引擎切换 + Tool Calling 真实场景再继续观察。

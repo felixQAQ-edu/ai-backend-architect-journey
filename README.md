@@ -13,8 +13,8 @@
 
 - **阶段**:第一阶段 · 管道优先
 - **月份**:M1 · Week 3
-- **本周任务**:Token 计费中间件 + 请求日志 @Aspect + ChatMemoryStore 持久化
-- **Day 2 完成**:BillingLog 持久化层(Entity + Repository + 集成测试全绿)
+- **Day 4 完成**:Token 计费中间件五步全过(SUCCESS / ERROR_RESPONSE / FAILED 三类样本落库验证)+ RequestIdFilter + RequestLoggingAspect + 跨线程 attributes 上下文传递 + Provider 切换零代码实证(详见 LEARNING-NOTES 笔记 8、9)
+- **下一步(Day 5)**:Week 3 收尾(ChatMemoryStore 持久化),或启动 Week 4(Tool Calling 真实场景验证)
 
 ## 阶段目录
 
@@ -28,7 +28,7 @@
 - [ADR-003: 跨境部署节点与支付通道策略](docs/adr/ADR-003-cross-border-deploy.md)
 - [ADR-004: LLM 调用框架选型 — LangChain4j vs Spring AI vs 直连 SDK](docs/adr/ADR-004-llm-framework.md)
 - [ADR-005: 关闭 Open Session In View(OSIV)](docs/adr/ADR-005-disable-osiv.md)
-
+- [ADR-006: @Aspect 与 ChatModelListener 的职责划分](docs/adr/ADR-006-listener-vs-aspect.md)
 ## 技术栈
 
 - **后端**:Java 21、Spring Boot 3.x

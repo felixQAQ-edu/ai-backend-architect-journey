@@ -96,8 +96,13 @@ M1 Week 2 启动，要把 mock SSE 替换为真流式 LLM 调用，绕不开"用
 - Spring AI 2.0 GA 且生态成熟度显著反超（社区规模、组件齐全度）
 - M2 引擎切换实测发现抽象渗漏严重（业务代码不得不感知 Provider 差异）
 
-## 实际效果（事后补充）
+## 实际效果(事后补充)
 
-_M1 结束时回填：AiServices 模式实际跑通用了多久？Tool Calling 调试体验如何？是否遇到 1.x 版本的坑？_
+**M1 Day 4 末实测**:
 
-_M2 结束时回填：换 Provider 时业务代码改动量是否真的为零？_
+- AiServices 模式 Tool Calling 跑通:5 个 @Tool 注解方法自动生成 Function Schema,LLM 拿到完整 tool list(实测 OpenAI gpt-4o-mini 收到的请求 body 含完整 schema,见日志样本)
+- **Provider 切换"零代码改动"已被意外验证**:application.yml 占位符 `${LLM_BASE_URL}` / `${LLM_API_KEY}` / `${LLM_MODEL_NAME}` 配合环境变量,在 OpenAI 和 DeepSeek 间切换业务代码无任何修改,BillingListener 在两个 Provider 下都正确触发(详见 LEARNING-NOTES 笔记 9)
+- ChatModelListener SPI 在 1.11 的 streaming + tool calling 场景下稳定,onRequest / onResponse / onError 跨线程 attributes 传递无丢失(详见 ADR-006 实际效果)
+- 未踩到 1.11 版本的 breaking change(spring-starter 用的是 beta19,但 core 用 1.11.0 稳定版)
+
+**M2 引擎切换实验时继续回填**:换到 Ollama 本地模型时业务代码改动量是否真的为零?

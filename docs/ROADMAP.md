@@ -177,6 +177,16 @@ _在这里简要写一下你的现有技术栈、薄弱环节、可投入时间(
     - `BillingLogRepository`(`JpaRepository` + `findByRequestId`)
     - `BillingLogRepositoryTest` 3 个测试全绿(往返 + 命中 + 未命中)
     - 关键设计:`Instant` 时间类型、DECIMAL 显式 precision/scale、TEXT 列用 `columnDefinition`、`@CreationTimestamp`
+    **Day 3:Token 计费 Listener 装配验证 + 跨境网络栈调试**
+- ✅ ChatModelListener 框架决定取代 @Aspect(详见 ADR-006 候选)
+- ✅ BillingListener 骨架落地,Listener 自动装配验证通过
+- ✅ 流式回调跨线程现象亲眼验证(onRequest=main,onError=LangChain4j-OpenAI-1
+  → 这是 LEARNING-NOTES 笔记 4 的实操印证)
+- ⚠️ 阻塞:LangChain4j 1.11.0-beta19 starter 与 spring-restclient adapter
+  抛出 UnresolvedAddressException,真实 LLM 调用未跑通
+- 待办:Day 4 调研 LangChain4j 版本组合(可能降到 1.10.x 稳定版,
+  或换 langchain4j-http-client-jdk 等其他 HTTP client 实现)
+- 决策:Step 2-5 用 mock 推进,不阻塞业务主线
   - **ADR-004**:LLM 调用框架选型完成(决策:LangChain4j 1.11.x + Spring Boot Starter)
   - **ADR-005**:关闭 OSIV(与 SSE 长连接 + 50 并发目标冲突)
 - 卡点:
@@ -222,7 +232,7 @@ _在这里简要写一下你的现有技术栈、薄弱环节、可投入时间(
 | ADR-003 | 部署节点与支付通道跨境策略 | 已采纳(约束已锁定,具体技术方案 M9 启动前回填) | `ADR-003-cross-border-deploy.md` |
 | ADR-004 | LLM 调用框架选型(LangChain4j vs Spring AI vs 直连 SDK) | 已采纳 | `ADR-004-llm-framework.md` |
 | ADR-005 | 关闭 Open Session In View(OSIV) | 已采纳 | `ADR-005-disable-osiv.md` |
-
+| ADR-006 | @Aspect 与 ChatModelListener 的职责划分 | 已采纳 | `ADR-006-listener-vs-aspect.md` |
 ### 待决策候选议题
 
 - **硬件与云 GPU 资源策略**:外置 SSD 选型 + 云 GPU 平台选型(M3 启动前完成)
@@ -403,3 +413,4 @@ _暂无_
 | v1.3 | 2026-04-30 | 新增第七节「方向假设池」(四问框架 + 5 条候选首批录入);第一阶段补充"前 8 个月不锁方向"设计哲学;M8 标记为方向决策节点;关键资源索引下补充用户验证渠道备忘;Claude 协作约定新增第 6 条(开放式探讨需主动总结入档) |
 | v1.4 | 2026-05-04 | ADR 完整内容拆出独立文件,正文仅保留索引;新增第八节「跨境时间线与迁移检查点」(部署策略、支付策略、检查点表、暂不做清单);项目元信息补充地理时间线与目标用户初步定位;M8 增加地理决策与持续性决策节点;方向假设池补充"目标用户地区"列;M11 任务描述补充支付通道分层策略;关键资源索引下新增项目预算备忘三档总表;新增 ADR-003(跨境部署与支付)索引项 |
 | v1.5 | 2026-05-11 | M1 Week 3 Day 2 收尾:ADR-004(LangChain4j)和 ADR-005(关闭 OSIV)入档;周度日志新增 Week 3 条目(Day 1 持久化技术栈 + Day 2 BillingLog 持久化层);进度表 M1 行更新主要产出与备注;待决策候选议题删除已采纳的 LLM 框架选型;当前月份字段更新为 M1 · Week 3 |
+| v1.6 | 2026-05-15 | M1 Week 3 Day 3:ADR-006(@Aspect 与 ChatModelListener 职责划分)入档;周度日志新增 Day 3 条目;阻塞项标记(LangChain4j 1.11.0-beta19 兼容性问题,Day 4 unblock) |

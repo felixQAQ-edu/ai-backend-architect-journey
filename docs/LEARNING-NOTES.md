@@ -109,8 +109,7 @@ AI 会顺着你说话的方式给你正反馈，让你以为掌握了。其实�
 | AOP / `@Aspect` / `@Around` | 面向切面编程，把日志/事务/计费这种横切关注点抽出来 | ★★★ |
 | `@Transactional` | 声明式事务，方法抛异常自动回滚 | ★★ |
 | JPA / Hibernate | Java 持久化标准 / 主流实现，对象 ↔ 数据库行映射 | ★★ |
-| MDC | 给同一请求的所有日志打同一 traceId 的机制 | ★★★ |
-| IoC / DI | Spring 的核心机制，`@Autowired` 背后的原理 | ★★★ |
+| MDC | 给同一请求的所有日志打同一 requestId 的机制(本项目统一用 requestId,不用 traceId,见 CONTEXT.md) | ★★★ || IoC / DI | Spring 的核心机制，`@Autowired` 背后的原理 | ★★★ |
 | Spring Boot Starter | 一组打包好的依赖 + 自动配置 | ★★ |
 | Actuator / Micrometer | Spring 的健康检查 + 指标采集（M9 接 Prometheus 用） | ★ |
 
@@ -351,35 +350,44 @@ AI 会顺着你说话的方式给你正反馈，让你以为掌握了。其实�
 
 **何时启用**：**M5 压测阶段做正式实验，写 ADR-005**。M1 阶段不开（避免业务 bug 和虚拟线程坑混在一起）。
 
-### 笔记 3：@Aspect 在 SSE 流式场景的"错位"
+### 笔记 3:@Aspect 在 SSE 流式场景的"错位"
 
-**反直觉的事实**：AOP **不适合**直接数 token。
+**反直觉的事实**:AOP **不适合**直接数 token(此处 token 指模型层的 prompt/completion token,
+不是 SSE 推送的 chunk,详见 CONTEXT.md)。
 
-**原因**：SSE 的 controller 方法 ~1ms 就返回了（只是抛出 SseEmitter），真正的 token 推送发生在方法返回**之后**。`@Around` 拦截不到那部分。
+**原因**:SSE 的 controller 方法 ~1ms 就返回了(只是抛出 SseEmitter),真正的 chunk 推送
+发生在方法返回**之后**。`@Around` 拦截不到那部分,因此也拿不到流式完成时才齐全的 TokenUsage。
 
 ```
 T=0      Controller 返回 SseEmitter           ← @Around 在这里"结束"
-T=0.001  方法返回，AOP 切面退出
-T=0~5    LLM 流式推送 token
-T=5      onComplete 触发，TokenUsage 此时才有  ← AOP 已经看不到
+T=0.001  方法返回,AOP 切面退出
+T=0~5    LLM 流式推送 chunk(几秒钟)
+T=5      onComplete 触发,TokenUsage 此时才有  ← AOP 已经看不到
 ```
 
-### 笔记 4：Token 计数的正确架构
+### 笔记 4:Token 计数的正确架构
 
-**分工清晰**：
+**分工清晰**(权威表见 ADR-006,此处为简版):
 
 | 关注点 | 用什么 |
 |------|------|
-| traceId / userId 注入 | Filter / Interceptor |
+| requestId / userId 注入 | Filter / Interceptor |
 | 请求开始/结束 timing | `@Aspect @Around` |
-| **Token 计数** | **`ChatModelListener`（LangChain4j SPI）** |
-| 流式 token 推送 | `StreamingChatResponseHandler.onPartialResponse` |
+| **Token 计数**(模型层) | **`ChatModelListener`(LangChain4j SPI)** |
+| 流式 chunk 推送 | `StreamingChatResponseHandler.onPartialResponse` |
 | 流式完成时拿 TokenUsage | `onCompleteResponse(ChatResponse)` |
 | 失败也要记账 | `onError` |
 
-**LangChain4j 官方做法**：实现 `ChatModelListener`，在 model builder 里 `.listeners(...)` 注册。流式和非流式都生效。
+**LangChain4j 官方做法**:实现 `ChatModelListener`,spring-boot-starter 自动把 `@Component`
+类型为 `ChatModelListener` 的 Bean 注入到所有 ChatModel,零配置(流式和非流式都生效)。
 
-**MDC 暗坑**：流式回调不在 AOP 同一线程时刻，要 snapshot MDC 然后传到回调里再装载。
+**跨线程上下文传递的双轨**(详见 ADR-006):
+- **同步链路 + 日志输出**:MDC 装 requestId,Filter 注入,@Aspect 读取
+- **跨线程的 Listener 内部**:`ChatModelRequestContext.attributes()` 装 requestId,
+  onRequest 塞、onResponse / onError 取
+
+**MDC 暗坑**:流式回调不在 AOP 同一线程时刻,MDC 会丢。如果需要在流式回调里输出带 requestId
+的日志,要 snapshot MDC 然后传到回调里再装载:
 
 ```java
 Map<String, String> mdcSnapshot = MDC.getCopyOfContextMap();
@@ -388,8 +396,208 @@ emitter.onTimeout(() -> MDC.clear());
 chatService.streamChat(prompt, mdcSnapshot, emitter);
 ```
 
+### 笔记 5:故障排查的层级纪律
+
+排查"明明不该出错的事情却出错"的层级(由近及远):
+
+1. 业务代码(95% 的概念性 bug 在这层)
+2. 框架配置(application.yml、环境变量)
+3. 框架版本(stable vs beta,版本对齐)← 今天的根因
+4. JVM 参数(VM options、system properties)
+5. 构建工具(IntelliJ vs mvn 命令行)
+6. JDK 版本(LTS vs 非 LTS)
+7. OS 网络栈(代理、DNS、socket)
+8. 物理网络(curl 直接测连通性)
+
+诊断技巧:从远端往近端逐层排除,**每次只动一个变量**。
+
+### 笔记 6:跨线程回调的认知冲突 —— 我以为同步,实际上是 ForkJoinPool
+
+**触发点**:Day 3 BillingListener 三回调骨架跑通后,第一次观察到 `Thread.currentThread().getName()` 的真实输出:
+
+```
+[BillingListener] onRequest  | thread=main
+[BillingListener] onError    | thread=LangChain4j-OpenAI-1   ← 完全不同的线程
+```
+
+(后来切到 OpenAI starter 后变成 `ForkJoinPool.commonPool-worker-1`,机制相同。)
+
+**认知冲突在哪**:
+
+我下意识以为 ChatModelListener 的三个回调跑在**调用线程**——你 controller 进来是 Tomcat handler,Listener 在同一个线程上挨个回调。这套心智模型在**非流式**调用里是对的:`chatModel.chat(...)` 同步阻塞,onRequest → 真实 HTTP → onResponse 全在一个线程里串完。
+
+但**流式**调用完全不同。`streamingChatModel.chat(...)` 立刻返回(因为它是 fire-and-forget),真实 HTTP 由 LangChain4j 的 `JdkHttpClient.sendAsync` 异步发出,**回调注册到 CompletableFuture 上,由 ForkJoinPool 派发**。所以 onRequest 还在主线程跑(此时 sendAsync 还没真启动),但 onResponse / onError 一定在某个 worker 线程上跑。
+
+**为什么这个认知冲突很重要**:
+
+它直接决定了"上下文怎么跨阶段传"。我本能想用 MDC(因为之前所有 Spring 项目都用 MDC),但 MDC 是 ThreadLocal,**跨线程必丢**。Day 3 当时就观察到这一现象——如果在 onRequest 里 `MDC.put("requestId", ...)`,onError 里 `MDC.get` 拿到的是 null(或者更糟,拿到上一个跑在同一 ForkJoinPool worker 上的请求的脏数据)。
+
+LangChain4j 把这个问题考虑过,所以三个 context(`ChatModelRequestContext` / `ResponseContext` / `ErrorContext`)都有一个 `attributes()` 方法,返回**同一个 ConcurrentHashMap 实例**,生命周期与一次 chat() 调用对齐。`onRequest` put 进去,`onResponse` / `onError` get 出来,跨线程安全。这是笔记 4 "Token 计数的正确架构" + ADR-006 "双轨上下文传递" 的真正落脚点。
+
+**给自己的提醒**:
+
+下次接触任何"流式 / 异步 / 回调式"框架时,**第一步打 `Thread.currentThread().getName()` 看回调跑在哪**。心智模型里的"同一线程"可能是错的。
+
+### 笔记 7:Day 3→4 卡点 —— 锁定为 JDK 21 异步路径暗坑(后被笔记 8 推翻)
+
+> ⚠️ **2026-05-20 修正**:本笔记的核心假设("JDK 21 异步路径本身是暗坑")已被 Day 4 末的反证链推翻,真正变量是 IDEA Test Runner 的 agent 注入,与 JDK 本身无关。详见笔记 8。**本笔记保留原文,作为"诊断失误样本",不修改**。
+
 ---
 
+**症状**:Day 3 BillingListener 骨架跑通后,所有 `BillingListenerSmokeTest` 真实 LLM 流式调用都抛 `UnresolvedAddressException`,**35ms 失败,不出网络**。
+
+```
+Caused by: java.nio.channels.UnresolvedAddressException
+    at sun.nio.ch.Net.checkAddress
+    at jdk.internal.net.http.PlainHttpConnection.lambda$connectAsync$1
+    ...
+```
+
+**排查过程**(按笔记 5 的 7 步层级,由近到远):
+
+| 层级 | 尝试 | 结果 |
+|------|------|------|
+| 业务代码 | review SmokeTest 多次 | 无问题 |
+| 框架配置 | `application.yml` 检查 | 无问题 |
+| 框架版本 | LangChain4j 1.11.0 core + 1.11.0-beta19 spring 双轨锁定 | 同样复现 |
+| JVM 参数 | 试过加 `-Djava.net.preferIPv4Stack=true` 等 | 无效 |
+| 构建工具 | `mvn test` 命令行复现 | 同样复现(后来发现这一步可能有误,见笔记 8) |
+| JDK 版本 | 21.0.11 → 21.0.10 patch 切换 | 同样复现 |
+| OS 网络栈 | `curl https://api.openai.com/v1/...` 直接打 | **通**,说明不是网络层 |
+| 物理网络 | wifi 切换、热点、地理位置切换 | 同样复现 |
+
+**推理**:8 步全过都不能解释。剩余未排除的假设池里,只剩"JDK HttpClient 异步路径本身有 bug"。同步 send() 测试 GET 通,异步 sendAsync POST + SSE 失败,这个对比似乎佐证了"异步路径有暗坑"的判断。
+
+**锁定结论**:JDK 21 macOS HttpClient sendAsync 暗坑(LangChain4j 1.11 用 `langchain4j-http-client-jdk` 实现,内部就是 sendAsync)。
+
+**沙盒化策略**:
+
+- 不再追这个 bug(继续追估计也追不出,而且已经花了一周)
+- 把 SUCCESS 路径用 `@Disabled` 占位,Day 4 继续推进 Step 2 / 4 / 5
+- onError 路径反而成了"现成的真实异常样本数据源",喂给 BillingStatusClassifier 做单测
+
+**给未来的我**:
+
+- 这条结论我不是 100% 有把握。8 步全过的反推法在统计学上是合理的,但"假设池完整性"无法被反推法本身证伪。
+- 如果 Day 5 之后 SUCCESS 路径还需要跑,优先尝试:升级 LangChain4j 1.12+(可能改了 http client 实现)、换 `langchain4j-http-client-spring-restclient`(已经在 pom 里)、或者换 OkHttp client。
+- **不要再花时间追"JDK bug 本身"的根因**。投入产出比太低,沙盒化继续推进业务管道更重要。
+
+---
+
+**👆 以上是原笔记 7 的全部内容。下面是 2026-05-20 修正的简短说明**:
+
+笔记 8 描述的反证链(三次 curl 验证)表明:同一台 Mac、同一份代码、同一个 JDK 21,只要用 `spring-boot:run` 启动而不是 IDEA Test Runner,就完全没有 `UnresolvedAddressException`。**真正变量是运行方式而非 JDK 本身**。
+
+但本笔记**保留原文不删**,作为"锁定根因前漏掉一个变量"的诊断纪律样本。半年后回看,这个错误本身比正确答案更有教育意义。
+
+### 笔记 8:诊断纪律失误复盘 —— 把"环境 bug"误锁成"JDK bug"
+
+**关键背景**:笔记 7 锁定的"JDK 21 macOS HttpClient sendAsync 暗坑"这一假设,在 Day 4 末被三次 curl 形成的反证链推翻。真正的根因没有彻底定位(可能也不打算彻底定位),但**锁定假设这件事本身就是诊断失误**。这条笔记记录这一失误的形成与拆除过程,作为"诊断纪律"的反例样本。
+
+#### 事实链(时间轴)
+
+| 日期 | 事件 | 结果 |
+|------|------|------|
+| 2026-05-15 Day 3 | BillingListener 骨架完成,SmokeTest 跑出 `UnresolvedAddressException`,35ms 失败,不出网络 | 卡点出现 |
+| Day 3 → Day 4 | 一周排查:网络 / 代理 / JDK 版本 / HTTP 版本 / Proxy / LangChain4j adapter 全部排除 | 假设收敛到"JDK 异步路径暗坑" |
+| Day 4 中段 | 写笔记 7、沙盒化 SUCCESS 路径(`@Disabled` 占位)、继续推进 Step 2/4/5 | 工程进度未停滞,但根因未解 |
+| Day 4 末 (15:32) | **第一次 curl**:用 `spring-boot:run` 启动 + invalid key → HTTP 401 `AuthenticationException` → ERROR_RESPONSE 落库 | **网络是通的**,根本不存在 DNS 解析失败 |
+| Day 4 末 (15:38) | **第二次 curl**:换 valid OpenAI key → HTTP 200 → SUCCESS 路径触发,拿到 `tokenUsage` | Step 3 一周的"盲点"瞬间解锁 |
+| Day 4 末 (15:38) | **第三次 curl**:补完 Step 3 落库代码 → BillingLog id=2 落库 status=SUCCESS latencyMs=1067 | Day 4 五步全过 |
+
+#### 笔记 7 假设是怎么锁定的
+
+排查走的是教科书式的"由近到远"层级(笔记 5):
+- ✅ 业务代码:多次 review,无明显问题
+- ✅ 框架配置:`application.yml` 检查无误
+- ✅ 框架版本:LangChain4j 1.11.0 + spring 1.11.0-beta19 双轨锁定
+- ✅ JVM 参数:无可疑
+- ✅ 构建工具:Maven 命令行也复现
+- ✅ JDK 版本:升降级 patch 版试过
+- ✅ OS 网络栈:curl 直接打 OpenAI 通,排除代理 / DNS
+- ✅ 物理网络:wifi 切换、热点、不同地理位置都试
+
+排到第 8 步,八步全过却仍然复现,**剩下的"未被排除"假设池只剩"JDK 异步路径本身"**。于是写下笔记 7,沙盒化,继续推进。
+
+**这个推理过程逻辑上无懈可击,但漏了一个变量**。
+
+#### 反证证据(Day 4 末 30 分钟内形成)
+
+三次 curl 跑出来的对比:
+
+| 运行方式 | API Key 状态 | Base URL | 结果 |
+|----------|--------------|----------|------|
+| **IDEA Test Runner**(SmokeTest)| invalid(DeepSeek 配到 OpenAI 路径)| api.openai.com | `UnresolvedAddressException` 35ms |
+| **`spring-boot:run`** | invalid(同上)| api.openai.com | HTTP 401 `AuthenticationException` 800ms |
+| **`spring-boot:run`** | valid | api.openai.com | HTTP 200 SUCCESS 1067ms |
+
+同一台 Mac、同一份代码、同一个 JDK 21、同一个 IDEA 进程父。**唯一变量是运行方式**(IDEA Test Runner vs `spring-boot:run`)。
+
+#### 错在哪里
+
+排查的 8 步层级里,**没有 "运行方式" 这一层**。IDEA Test Runner 在 JVM classpath 里注入了多个 agent(`debugger-agent.jar` / `byte-buddy-agent.jar` / `idea_rt.jar`),`spring-boot:run` 没有这些。这些 agent 对 JDK HttpClient 异步路径的具体影响**今天未深究**,但客观事实是:**它们是变量**,而笔记 7 把它们当成了不变量(实际上根本没意识到它们存在)。
+
+锁定"JDK bug"那一刻,**关闭的不是"再排查一层"的可能性,而是"换运行方式试试"这扇本来该开着的门**。门一关,SUCCESS 路径就再也不会被触发,直到 Day 4 末因为别的事情(Step 5 验证)启动 `spring-boot:run`,门才被无意中重新推开。
+
+#### 真正的教训
+
+1. **"假设池排除完了"≠"真因已定位"**。每一步排查实际上都在缩小假设池,但**假设池本身的完整性是有边界的**——你只能排除你想到的假设。"运行方式"这种系统性偏见,排除多少层也排除不到。
+2. **锁定根因前永远问一句:"我换一个我没换过的变量再试一遍了吗?"** 即便那个变量看起来"不可能相关"。Day 4 末发现网络是通的那一刻,如果三天前就用 `spring-boot:run` 跑一次,卡点就不存在。
+3. **写笔记 7 时的"已排除清单"应该是开放式而非封闭式**。"已排除 X / Y / Z" → "**目前已尝试** X / Y / Z,未尝试 A / B / C"。后者保留了重新审视的入口。
+4. **沙盒化策略本身是对的**。笔记 7 即便假设错了,沙盒化让 Day 4 的其他四步照常推进,代价被局部化了。这一点不该被"假设错了"的复盘抹掉——**好的工程纪律可以让坏的判断不至于灾难**。
+
+#### 给排查清单(笔记 5)的补丁
+
+在原有 8 步之上加第 0 步:
+
+> **0. 运行环境差异**(应该最先怀疑,但常被忽略)
+> 同一份代码在不同运行方式下表现不同 → 99% 是环境问题。具体变量:IDE 测试运行器 vs `mvn` 命令行 vs `spring-boot:run`、profile 差异、classpath 差异、agent 注入差异。
+
+#### 笔记 7 的处理
+
+**不删**,但加一行修正注释指向本笔记:
+
+> ⚠️ **2026-05-20 修正**:本笔记假设的"JDK 21 异步路径暗坑"已被 Day 4 末三次 curl 形成的反证链推翻。真正变量是 IDEA Test Runner 的 agent 注入,与 JDK 本身无关。详见笔记 8。本笔记保留作为"诊断失误样本",不修改原文。
+
+### 笔记 9:Provider 切换的零代码实证 —— ADR-004 关键卖点的意外验证
+
+**背景**:ADR-004 选 LangChain4j 时押的核心卖点之一,是"换 Provider / 换模型不应改业务代码"。M2 原计划是这个卖点的正式实验,但 Day 4 末因为 API key 配错(把 DeepSeek key 配到了默认指向 OpenAI 的环境变量上),**意外地实证了这一抽象的真实价值**。
+
+#### 关键设计:application.yml 三个占位符
+
+```yaml
+langchain4j:
+  open-ai:
+    streaming-chat-model:
+      base-url: ${LLM_BASE_URL:https://api.deepseek.com/v1}
+      api-key: ${LLM_API_KEY}
+      model-name: ${LLM_MODEL_NAME:deepseek-chat}
+```
+
+业务代码(BillingListener / ChatController / Aspect)**完全不知道**自己在打 OpenAI 还是 DeepSeek。Provider 由三个环境变量在运行时决定。
+
+#### Day 4 末的实证
+
+| 环境变量配置 | 实际打到的 Provider | 业务代码改动 |
+|--------------|---------------------|--------------|
+| `LLM_BASE_URL=https://api.openai.com/v1` + `LLM_MODEL_NAME=gpt-4o-mini` + valid OpenAI key | api.openai.com | **零行改动** |
+| 不设(走默认)+ valid DeepSeek key | api.deepseek.com | **零行改动** |
+
+BillingListener 在两个 Provider 下都正确触发了 onRequest / onResponse / onError 三个回调。TokenUsage 抽象一致(LangChain4j 层做的适配),Token 计费逻辑无需关心 Provider 差异。
+
+#### 与 ADR-004 的关系
+
+ADR-004 "实际效果(事后补充)"原本留给 M2:
+> M2 结束时回填:换 Provider 时业务代码改动量是否真的为零?
+
+**Day 4 已经回答了"是的,零改动"**。M2 正式实验时要在此基础上补的:
+- 单价表:不同 Provider 的 input / output 单价(目前都是 0)
+- BillingLog.provider 字段动态化(目前硬编码 "openai")
+- 切到 Ollama 本地模型时的延迟 / 吞吐对比
+
+#### 这个意外的元价值
+
+这种"我已经把它做了但当时没意识到"的经验,是 ADR 设计良好的真实证据。如果架构是脆的,换 Provider 就该崩了——但没崩,说明抽象层切对了。这一点比 SUCCESS 路径落库本身**更值钱**,因为它验证的是设计意图,不是单一功能。
 ## 六、进度追踪表
 
 按优先级排，✅ 表示已掌握（能用费曼方法讲明白）。
