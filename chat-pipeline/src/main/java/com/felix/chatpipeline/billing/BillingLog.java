@@ -19,7 +19,7 @@ public class BillingLog {
     private String requestId;
 
     @Column(length = 64)
-    private String sessionId;
+    private String conversationId;
 
     @Column(length = 64)
     private String userId;
@@ -83,8 +83,8 @@ public class BillingLog {
     public String getRequestId() { return requestId; }
     public void setRequestId(String requestId) { this.requestId = requestId; }
 
-    public String getSessionId() { return sessionId; }
-    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+    public String getConversationId() { return conversationId; }
+    public void setConversationId(String conversationId) { this.conversationId = conversationId; }
 
     public String getUserId() { return userId; }
     public void setUserId(String userId) { this.userId = userId; }

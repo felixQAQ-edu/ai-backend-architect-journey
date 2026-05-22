@@ -18,6 +18,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 这个测试在 Day 2 之前看似冗余(SQL 自己跑通了不就行?),但它的真正价值在 Day 2 之后:
  * 当 BillingLog Entity 字段与表列产生偏差时,这个测试会比应用启动失败更快地暴露问题。
  * 是后续所有 billing 相关变更的回归基线。
+ *
+ * Day 5(M1 Week 3)更新:session_id 列重命名为 conversation_id,与 CONTEXT.md v0.1.1
+ * 锁定的术语对齐(V3__rename_billing_log_session_to_conversation.sql)。
  */
 @SpringBootTest
 class BillingLogSchemaTest {
@@ -36,7 +39,7 @@ class BillingLogSchemaTest {
         }
 
         assertThat(columns).containsExactlyInAnyOrder(
-                "ID", "REQUEST_ID", "SESSION_ID", "USER_ID",
+                "ID", "REQUEST_ID", "CONVERSATION_ID", "USER_ID",
                 "PROVIDER", "MODEL_NAME",
                 "INPUT_TOKENS", "OUTPUT_TOKENS", "TOTAL_TOKENS",
                 "INPUT_UNIT_PRICE", "OUTPUT_UNIT_PRICE", "TOTAL_COST", "CURRENCY",
