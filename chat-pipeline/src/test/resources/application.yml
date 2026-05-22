@@ -7,6 +7,7 @@ spring:
     password: ""
 
   jpa:
+    open-in-view: false          # ADR-005 一致:测试 profile 与主程序保持相同 OSIV 关闭策略
     hibernate:
       ddl-auto: validate
 
