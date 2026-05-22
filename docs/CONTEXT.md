@@ -4,7 +4,7 @@
 > 本文档与 ADR 体系互补:ADR 记录"为什么这样决定",本文档记录"我们用哪个词指什么"。
 > 写法参考 mattpocock/skills 的 CONTEXT.md 模式。
 >
-> **版本**:v0.1.1(2026-05-15,M1 Week 3 Day 3)
+> **版本**:v0.2(2026-05-21,M1 Week 3 Day 5)
 > **维护原则**:边写边长。新增术语的触发条件是"代码或文档里反复出现且产生过歧义",而非"我觉得这个概念将来可能要用"。
 
 ## Language
@@ -55,7 +55,11 @@ _Avoid_:
 - **BillingLog 失败状态分类** —— 已在 Day 2 锁定为 `SUCCESS` / `FAILED` / `RATE_LIMITED` / `ERROR_RESPONSE` 四值;`FAILED` 是兜底类(网络错误、未知异常),`RATE_LIMITED` 专指 HTTP 429,`ERROR_RESPONSE` 专指 provider 返回 4xx/5xx 业务错误。详见 ADR-006 实施进度表。
 - **`orphan-xxx` 前缀**(2026-05-20 引入):当 BillingListener 在 onResponse / onError 路径拿不到 attributes 里的 requestId 时(例如某种异常路径上游 Filter 没装填),用 `orphan-` + 8 位 UUID 短码兜底落库,保证审计记录"必落"。后续 SQL 查询可用 `request_id LIKE 'orphan-%'` 识别这类记录。
 - **BillingLog.provider 字段**:M1 阶段硬编码 "openai",M2 引擎切换时改成动态(从 ChatModel 实现类反射或 listener 工厂传入)。
+- **sessionId 与 conversationId 早期不一致**(2026-05-21 Day 5 解决):Day 2-4 期间 BillingLog、ChatRequest、KnowledgeAssistant、ChatController 都用 `sessionId`,与本 CONTEXT.md v0.1.1 锁定的 `conversationId` 命名冲突。根因是 CONTEXT.md 是 Day 3 才建立的,前两天写的代码已经用了 sessionId 没回查。Day 5 顺手做了 sessionId → conversationId 全局重命名(9 个文件 + V3 Flyway migration `V3__rename_billing_log_session_to_conversation.sql`)。过程中暴露了"列改动清单时漏文件"+"Cmd+R 替换没用 Replace All"两次微缩诊断纪律失误,详见 LEARNING-NOTES 笔记 10。
+
 2026-05-15:LEARNING-NOTES 笔记 3/4 已按本文档口径修订完毕
+2026-05-21:sessionId → conversationId 全局重命名完成,CONTEXT.md 升至 v0.2
+
 ---
 
 ## 边写边长清单(暂不定义)
@@ -70,4 +74,4 @@ _Avoid_:
 
 ---
 
-_最后更新:2026-05-15 · v0.1 初版,M1 Week 3 Day 3_
+_最后更新:2026-05-21 · v0.2 Day 5 收尾,加入 sessionId → conversationId 重命名记录_
