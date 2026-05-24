@@ -481,6 +481,7 @@ Caused by: java.nio.channels.UnresolvedAddressException
 - 这条结论我不是 100% 有把握。8 步全过的反推法在统计学上是合理的,但"假设池完整性"无法被反推法本身证伪。
 - 如果 Day 5 之后 SUCCESS 路径还需要跑,优先尝试:升级 LangChain4j 1.12+(可能改了 http client 实现)、换 `langchain4j-http-client-spring-restclient`(已经在 pom 里)、或者换 OkHttp client。
 - **不要再花时间追"JDK bug 本身"的根因**。投入产出比太低,沙盒化继续推进业务管道更重要。
+- "2026-05-24 · 本主题循环已由 ADR-008 关闭,配置删除"
 
 ---
 
@@ -558,6 +559,8 @@ Caused by: java.nio.channels.UnresolvedAddressException
 **不删**,但加一行修正注释指向本笔记:
 
 > ⚠️ **2026-05-20 修正**:本笔记假设的"JDK 21 异步路径暗坑"已被 Day 4 末三次 curl 形成的反证链推翻。真正变量是 IDEA Test Runner 的 agent 注入,与 JDK 本身无关。详见笔记 8。本笔记保留作为"诊断失误样本",不修改原文。
+
+- "2026-05-24 · 本主题循环已由 ADR-008 关闭,配置删除"
 
 ### 笔记 9:Provider 切换的零代码实证 —— ADR-004 关键卖点的意外验证
 

@@ -31,6 +31,8 @@
 - [ADR-005: 关闭 Open Session In View(OSIV)](docs/adr/ADR-005-disable-osiv.md)
 - [ADR-006: @Aspect 与 ChatModelListener 的职责划分](docs/adr/ADR-006-listener-vs-aspect.md)
 - [ADR-007: ChatMemoryStore 消息持久化策略](docs/adr/ADR-007-chat-memory-store-persistence.md)
+- [ADR-008： 删除自定义 LangChain4jHttpClientConfig,回归 starter 默认装配](docs/adr/ADR-008-remove-http-client-config.md)
+
 
 ## 技术栈
 

@@ -11,6 +11,7 @@
 | Git | 2.54.0 | `brew install git` |
 | OpenJDK | 21.0.11 (Homebrew) | `brew install openjdk@21` |
 | GitHub 认证 | SSH (ed25519) | 本地密钥 + GitHub Settings |
+|Maven 3.9.x |
 
 ## 一次性环境搭建步骤
 
@@ -59,8 +60,10 @@ brew install openjdk@21
 sudo ln -sfn /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk \
   /Library/Java/JavaVirtualMachines/openjdk-21.jdk
 ```
+### 6. 安装 Maven
+   brew install maven
 
-### 6. 配置 `~/.zshrc`
+### 7. 配置 `~/.zshrc`
 
 ```bash
 # ===== Homebrew =====
