@@ -37,3 +37,5 @@ data/
 *.mv.db
 *.trace.db
 *.lock.db
+# Claude Code per-user / per-machine state
+.claude/settings.local.json
