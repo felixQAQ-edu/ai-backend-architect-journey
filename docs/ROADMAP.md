@@ -11,7 +11,7 @@
 | 项目启动日期 | 2026-04-30 |
 | 预计完成日期 | 2027-04-30 |
 | 当前阶段 | 第一阶段 · 管道优先 |
-| 当前月份 | M1 · Week 3 |
+| 当前月份 | M1 · Week 4 |
 | 整体目标 | 从应用层 → 底层推理 → RAG 架构 → 高可用 SaaS,完整跨越四层技术栈 |
 | 终极交付物 | 一个上线运营、有付费用户、有可量化业务数据的 AI SaaS 系统 |
 | 地理时间线 | 悉尼留学期间启动与开发 → 2027-06 末回国 → 回国后根据 M8 验证结果决定是否继续 |
@@ -133,7 +133,7 @@ _在这里简要写一下你的现有技术栈、薄弱环节、可投入时间(
 
 | 月份 | 阶段 | 核心任务 | 状态 | 实际完成日期 | 主要产出 / 链接 | 备注 |
 |------|------|---------|------|------------|---------------|------|
-| M1 | 一 | Spring Boot × LLM 全链路 + 团队知识库 Agent | 🟨 | | ADR-001 流式选型(SSE+MVC);ADR-002 Boot 3.5.14;ADR-004 LangChain4j;ADR-005 关闭 OSIV;BillingLog 持久化层(Entity + Repo + 集成测试)| Week 3 Day 2 完成 BillingLog 持久化层落地 |
+| M1 | 一 | Spring Boot × LLM 全链路 + 团队知识库 Agent | 🟨 | | ADR-001~008 共 8 个决策落地;三层中间件架构(Filter requestId + Aspect timing + Listener token 计费);BillingLog 持久化;ChatMemoryStore 持久化(ADR-007);删除防御性 HttpClientConfig(ADR-008,关闭笔记 7/8 主题循环) | Week 4 主线:Tool Calling 真实场景验证 |
 | M2 | 一 | 引擎替换为金融 API | ⬜ | | | |
 | M3 | 二 | Ollama + vLLM 本地部署 | ⬜ | | | M3 启动前完成 SSD 采购 + 云 GPU 平台选型(候选 ADR) |
 | M4 | 二 | INT8 / INT4 量化对比实验 | ⬜ | | | |
@@ -164,39 +164,57 @@ _在这里简要写一下你的现有技术栈、薄弱环节、可投入时间(
   - 实现首个 SSE 端点的 mock 流式输出
 
 
-**Week 3(2026-05-11)**
+**Week 3(2026-05-11 ~ 2026-05-22)**
+
+> 完整复盘文档:`docs/retrospectives/week-3-retrospective.md`
+
 - 完成:
   - **Day 1:Spring Boot 持久化技术栈选型与落地**
     - `spring-boot-starter-data-jpa` + H2 file 模式 + Flyway 11.x
-    - `application.yml`(主)+ `src/test/resources/application.yml`(测试用内存 H2)
-    - `ddl-auto: validate` 启用 —— Entity ↔ Schema 不一致直接启动失败
     - V1 migration 应用,`BILLING_LOG` 表 19 列就位
-    - `BillingLogSchemaTest`(`@SpringBootTest` + JDBC metadata 校验列名集合)通过
+    - `BillingLogSchemaTest` 通过(`@SpringBootTest` + JDBC metadata 校验列名集合)
   - **Day 2:BillingLog 持久化层**
-    - `BillingStatus` 枚举 + `BillingLog` Entity(19 字段,业务键 equals/hashCode)
-    - `BillingLogRepository`(`JpaRepository` + `findByRequestId`)
-    - `BillingLogRepositoryTest` 3 个测试全绿(往返 + 命中 + 未命中)
-    - 关键设计:`Instant` 时间类型、DECIMAL 显式 precision/scale、TEXT 列用 `columnDefinition`、`@CreationTimestamp`
-    **Day 3:Token 计费 Listener 装配验证 + 跨境网络栈调试**
-- ✅ ChatModelListener 框架决定取代 @Aspect(详见 ADR-006 候选)
-- ✅ BillingListener 骨架落地,Listener 自动装配验证通过
-- ✅ 流式回调跨线程现象亲眼验证(onRequest=main,onError=LangChain4j-OpenAI-1
-  → 这是 LEARNING-NOTES 笔记 4 的实操印证)
-- ⚠️ 阻塞:LangChain4j 1.11.0-beta19 starter 与 spring-restclient adapter
-  抛出 UnresolvedAddressException,真实 LLM 调用未跑通
-- 待办:Day 4 调研 LangChain4j 版本组合(可能降到 1.10.x 稳定版,
-  或换 langchain4j-http-client-jdk 等其他 HTTP client 实现)
-- 决策:Step 2-5 用 mock 推进,不阻塞业务主线
-  - **ADR-004**:LLM 调用框架选型完成(决策:LangChain4j 1.11.x + Spring Boot Starter)
-  - **ADR-005**:关闭 OSIV(与 SSE 长连接 + 50 并发目标冲突)
-- 卡点:
-  - Day 2 测试类放错目录(`src/main/java` vs `src/test/java`)→ test scope 依赖全部 unresolved。
-    IntelliJ `⌘+⇧+T` 在被测类上按可避开
+    - `BillingStatus` 枚举 + `BillingLog` Entity(19 字段)+ `BillingLogRepository`
+    - 关键设计:`Instant` 时间类型、DECIMAL 显式 precision/scale、TEXT 用 `columnDefinition`
+    - `BillingLogRepositoryTest` 3 个测试全绿
+  - **Day 3:Token 计费 Listener 装配 + 跨境网络栈卡点**
+    - `BillingListener` 骨架装配通过,流式回调跨线程亲眼验证
+    - ⚠️ `BillingListenerSmokeTest` 抛 `UnresolvedAddressException` 35ms 失败 → 进入 LEARNING-NOTES 笔记 7 排查
+    - 决策:Step 2-5 用 mock 推进,不阻塞业务主线
+  - **Day 4:中间件三层架构落定 + 反证链初步形成**
+    - ADR-006:三层中间件职责分工(Filter requestId + Aspect timing + ChatModelListener token 计费)
+    - 引入 `LangChain4jHttpClientConfig`(防御性配置:JDK HttpClient + HTTP/1.1 + ProxySelector.of(null))
+    - 真实 LLM 调用跑通,三类样本(SUCCESS/FAILED_LLM/FAILED_SYSTEM)实测落库
+    - **LEARNING-NOTES 笔记 8 形成**:三次 curl 反证链推翻"JDK 暗坑"根因,锁定"IDEA Test Runner agent 注入"为真因 —— 但当时收尾时间紧张,`LangChain4jHttpClientConfig` 选择"保留观察"
+  - **Day 5:ChatMemoryStore 持久化 + 多轮对话验证**
+    - ADR-007 落地:`PersistentChatMemoryStore`(delete-then-insert + `conversation_message` 表 + AiServices 接入)
+    - 真实多轮 curl 验证 LLM 引用前一轮 "Felix"
+    - 顺手发现并修复 OSIV 文件名 typo + **LEARNING-NOTES 笔记 10**(全局变更前置纪律 P0)
+- 决策:
+  - **ADR-006**:@Aspect 与 ChatModelListener 职责划分(已采纳)
+  - **ADR-007**:ChatMemoryStore 持久化策略 delete-then-insert(已采纳)
+- 卡点(已 unblock):
+  - Day 3 起 `UnresolvedAddressException` 阻塞 → 笔记 7 锁定假设 → Day 4 末笔记 8 反证推翻 → Week 4 Day 0 由 **ADR-008 关闭循环**
 - 下周计划(Week 4):
-  - Token 计费 `@Aspect` 中间件:拦截 LLM 调用 → 计数 → 写 BillingLog
-  - 请求/响应日志落库(可能复用 `@Aspect` 或单独拦截器)
-  - ChatMemoryStore 持久化(LangChain4j 的会话记忆从内存搬到 H2)
+  - 主线:**Tool Calling 真实场景验证** —— 5 个 @Tool 在真实多轮 LLM 调用里完整跑通("LLM 主动决策 → AiServices 执行 → 结果回填 → 二次推理")
+  - 验证标准(不是注解写了就算):
+    1. 日志能看到 LLM 真的发出 tool_call 请求
+    2. `ToolExecutionResultMessage` 真的落库 `conversation_message` 表
+    3. 多轮场景下,下一次 LLM 调用 context 里能看到上一轮 tool 结果
+    4. 计费层 BillingLog 仍正确(tool call 多轮 = 多次 LLM 调用 = 多条 BillingLog)
 
+
+**Week 4(2026-05-24 启动)**
+- Day 0 完成:
+  - 暖机 1:测试环境验证(`mvn test` 31/31 全绿,OSIV `false` 在 default + test 双 profile 双重确认)
+  - 暖机 2:`LangChain4jHttpClientConfig` 反证完成 → **ADR-008 落地,LEARNING-NOTES 笔记 7/8 主题循环正式关闭**
+  - 暖机 3:ROADMAP 校准(本次更新)
+- Day 1-5 主线规划:
+  - **Day 1**:文档语料库种子数据(5-10 篇 Markdown,覆盖工程/产品/运营 3 类)+ 单 tool 探针(`getCurrentDateTime` 无参数验证完整链路)
+  - **Day 2**:多轮 context 累积验证(同 conversationId 连续 curl,验证 tool 结果回填到下一轮)
+  - **Day 3**:带参数 tool(`listDocumentsByCategory`,验证 LLM 参数提取 + schema 约束)
+  - **Day 4**:多 tool 编排(`searchDocuments` → `getDocumentById` → `summarizeDocument` 链式调用)
+  - **Day 5**:Week 4 复盘 + ROADMAP 完整更新 + 必要 ADR(候选 ADR-009/010 议题:tool 异常兜底、大结果截断策略)
 ---
 
 ## 四、技术决策记录(ADR)
@@ -233,6 +251,8 @@ _在这里简要写一下你的现有技术栈、薄弱环节、可投入时间(
 | ADR-004 | LLM 调用框架选型(LangChain4j vs Spring AI vs 直连 SDK) | 已采纳 | `ADR-004-llm-framework.md` |
 | ADR-005 | 关闭 Open Session In View(OSIV) | 已采纳 | `ADR-005-disable-osiv.md` |
 | ADR-006 | @Aspect 与 ChatModelListener 的职责划分 | 已采纳 | `ADR-006-listener-vs-aspect.md` |
+| ADR-007 | ChatMemoryStore 持久化策略(delete-then-insert) | 已采纳 | `ADR-007-chat-memory-store-persistence.md` |
+| ADR-008 | 删除自定义 LangChain4jHttpClientConfig,回归 starter 默认装配 | 已采纳 | `ADR-008-remove-http-client-config.md` |
 ### 待决策候选议题
 
 - **硬件与云 GPU 资源策略**:外置 SSD 选型 + 云 GPU 平台选型(M3 启动前完成)
@@ -414,3 +434,4 @@ _暂无_
 | v1.4 | 2026-05-04 | ADR 完整内容拆出独立文件,正文仅保留索引;新增第八节「跨境时间线与迁移检查点」(部署策略、支付策略、检查点表、暂不做清单);项目元信息补充地理时间线与目标用户初步定位;M8 增加地理决策与持续性决策节点;方向假设池补充"目标用户地区"列;M11 任务描述补充支付通道分层策略;关键资源索引下新增项目预算备忘三档总表;新增 ADR-003(跨境部署与支付)索引项 |
 | v1.5 | 2026-05-11 | M1 Week 3 Day 2 收尾:ADR-004(LangChain4j)和 ADR-005(关闭 OSIV)入档;周度日志新增 Week 3 条目(Day 1 持久化技术栈 + Day 2 BillingLog 持久化层);进度表 M1 行更新主要产出与备注;待决策候选议题删除已采纳的 LLM 框架选型;当前月份字段更新为 M1 · Week 3 |
 | v1.6 | 2026-05-15 | M1 Week 3 Day 3:ADR-006(@Aspect 与 ChatModelListener 职责划分)入档;周度日志新增 Day 3 条目;阻塞项标记(LangChain4j 1.11.0-beta19 兼容性问题,Day 4 unblock) |
+| v1.7 | 2026-05-24 | M1 Week 3 完整收尾(Day 3-5)+ Week 4 Day 0 暖机完成:ADR-007(ChatMemoryStore 持久化 delete-then-insert)、ADR-008(删除 LangChain4jHttpClientConfig)入档;LEARNING-NOTES 笔记 7/8 主题循环关闭(ADR-008);周度日志 Week 3 补完整复盘 + 新增 Week 4 启动条目(含 Day 1-5 主线规划 + Tool Calling 4 条验证标准);当前月份字段 M1 · Week 3 → M1 · Week 4;进度表 M1 行更新主要产出 |
